@@ -1,0 +1,61 @@
+name: Android Appium Instagram Bot
+
+on: workflow_dispatch: schedule: - cron: '0 2 * * *' # Runs daily at 2 AM UTC
+
+jobs: run-android-bot: runs-on: ubuntu-latest
+
+steps:
+- name: Checkout repo
+  uses: actions/checkout@v3
+
+- name: Setup Java 11
+  uses: actions/setup-java@v3
+  with:
+    java-version: '11'
+
+- name: Install AVD & Appium dependencies
+  run: |
+    sudo apt-get update -y
+    sudo apt-get install -y qemu-kvm libvirt-daemon-system libvirt-clients bridge-utils python3-pip unzip curl wget
+    sudo apt-get install -y openjdk-11-jdk
+
+    # Android command line tools
+    mkdir -p $HOME/android-sdk
+    cd $HOME/android-sdk
+    wget https://dl.google.com/android/repository/commandlinetools-linux-8512546_latest.zip -O cmdtools.zip
+    unzip cmdtools.zip -d cmdline-tools
+    mv cmdline-tools cmdline-tools/latest
+
+    echo "export ANDROID_SDK_ROOT=$HOME/android-sdk" >> $GITHUB_ENV
+    echo "export PATH=$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$ANDROID_SDK_ROOT/emulator:$ANDROID_SDK_ROOT/platform-tools:$PATH" >> $GITHUB_ENV
+
+    yes | $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --sdk_root=$HOME/android-sdk "platform-tools" "platforms;android-30" "emulator" "system-images;android-30;google_apis;x86_64"
+
+    echo "no" | avdmanager create avd -n test -k "system-images;android-30;google_apis;x86_64" --force
+
+- name: Start Android Emulator
+  run: |
+    nohup $HOME/android-sdk/emulator/emulator -avd test -no-snapshot -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim &
+    adb wait-for-device
+    adb shell input keyevent 82 &
+    sleep 60  # Let the emulator fully boot
+
+- name: Install Instagram APK
+  run: |
+    wget "https://github.com/Alex313031/ig-apk/releases/download/latest/Instagram_v320.0.0.12.116.apk" -O instagram.apk
+    adb install instagram.apk
+
+- name: Install Appium and dependencies
+  run: |
+    pip3 install Appium-Python-Client
+    npm install -g appium
+    nohup appium &
+    sleep 20
+
+- name: Run IG automation script
+  env:
+    IG_USERNAME: ${{ secrets.IG_USERNAME }}
+    IG_PASSWORD: ${{ secrets.IG_PASSWORD }}
+  run: |
+    python3 appium_bot.py
+
