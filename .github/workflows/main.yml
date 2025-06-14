@@ -36,7 +36,7 @@ jobs:
           sudo dpkg --add-architecture i386
           sudo apt-get update -y
           
-          # Install common 32-bit libraries (excluding libgl1-mesa-glx:i386 here)
+          # Install common 32-bit libraries (excluding libgl1-mesa-glx:i386 here, as it's often a transitional package)
           sudo apt-get install -y \
             libc6:i386 \
             libstdc++6:i386 \
@@ -76,18 +76,21 @@ jobs:
       - name: Install libgl1-mesa-glx:i386 and libdrm:i386 workaround
         run: |
           echo "Attempting to install libgl1-mesa-glx:i386 and libdrm:i386 dependencies from Ubuntu 22.04 archives..."
-          # Download required i386 packages from Ubuntu 22.04 (Jammy Jellyfish) security archives
-          wget http://security.ubuntu.com/ubuntu/pool/universe/m/mesa/libgl1-mesa-glx_23.0.4-0ubuntu1~22.04.1_i386.deb -O libgl1-mesa-glx_i386.deb
-          wget http://security.ubuntu.com/ubuntu/pool/main/m/mesa/libglapi-mesa_23.0.4-0ubuntu1~22.04.1_i386.deb -O libglapi-mesa_i386.deb
-          wget http://security.ubuntu.com/ubuntu/pool/main/libd/libdrm/libdrm2_2.4.113-2~ubuntu0.22.04.1_i386.deb -O libdrm2_i386.deb
-          wget http://security.ubuntu.com/ubuntu/pool/main/libd/libdrm/libdrm-intel1_2.4.113-2~ubuntu0.22.04.1_i386.deb -O libdrm-intel1_i386.deb
-          wget http://security.ubuntu.com/ubuntu/pool/main/libd/libdrm/libdrm-nouveau2_2.4.113-2~ubuntu0.22.04.1_i386.deb -O libdrm-nouveau2_i386.deb
-          wget http://security.ubuntu.com/ubuntu/pool/main/libd/libdrm/libdrm-radeon1_2.4.113-2~ubuntu0.22.04.1_i386.deb -O libdrm-radeon1_i386.deb
+          # Download required i386 packages from Ubuntu 22.04 (Jammy Jellyfish) archives
+          # libglapi-mesa:i386 and libgl1-mesa-dri:i386 are core Mesa components
+          wget http://archive.ubuntu.com/ubuntu/pool/main/m/mesa/libglapi-mesa_23.2.1-1ubuntu3.1~22.04.3_i386.deb -O libglapi-mesa_i386.deb
+          wget http://archive.ubuntu.com/ubuntu/pool/main/m/mesa/libgl1-mesa-dri_23.2.1-1ubuntu3.1~22.04.3_i386.deb -O libgl1-mesa-dri_i386.deb
+
+          # libdrm packages
+          wget http://archive.ubuntu.com/ubuntu/pool/main/libd/libdrm/libdrm2_2.4.113-2~ubuntu0.22.04.1_i386.deb -O libdrm2_i386.deb
+          wget http://archive.ubuntu.com/ubuntu/pool/main/libd/libdrm/libdrm-intel1_2.4.113-2~ubuntu0.22.04.1_i386.deb -O libdrm-intel1_i386.deb
+          wget http://archive.ubuntu.com/ubuntu/pool/main/libd/libdrm/libdrm-nouveau2_2.4.113-2~ubuntu0.22.04.1_i386.deb -O libdrm-nouveau2_i386.deb
+          wget http://archive.ubuntu.com/ubuntu/pool/main/libd/libdrm/libdrm-radeon1_2.4.113-2~ubuntu0.22.04.1_i386.deb -O libdrm-radeon1_i386.deb
 
           # Install the downloaded packages
           sudo dpkg -i \
-            libgl1-mesa-glx_i386.deb \
             libglapi-mesa_i386.deb \
+            libgl1-mesa-dri_i386.deb \
             libdrm2_i386.deb \
             libdrm-intel1_i386.deb \
             libdrm-nouveau2_i386.deb \
@@ -96,14 +99,14 @@ jobs:
             sudo apt-get install -f -y
             # Try dpkg install again after fixing dependencies
             sudo dpkg -i \
-              libgl1-mesa-glx_i386.deb \
               libglapi-mesa_i386.deb \
+              libgl1-mesa-dri_i386.deb \
               libdrm2_i386.deb \
               libdrm-intel1_i386.deb \
               libdrm-nouveau2_i386.deb \
               libdrm-radeon1_i386.deb
           }
-          echo "✅ libgl1-mesa-glx:i386 and libdrm:i386 dependencies installed"
+          echo "✅ libglapi-mesa:i386, libgl1-mesa-dri:i386 and libdrm:i386 dependencies installed"
 
       - name: Setup Android SDK
         run: |
