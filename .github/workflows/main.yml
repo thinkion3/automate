@@ -3,7 +3,7 @@ name: Android Appium Instagram Bot
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 2 * * *'  # Runs daily at 2 AM UTC
+    - cron: '0 2 * * *'  # Optional: runs daily at 2 AM UTC
 
 jobs:
   run-android-bot:
@@ -16,7 +16,8 @@ jobs:
       - name: Setup Java 11
         uses: actions/setup-java@v3
         with:
-          java-version: '11'
+          distribution: "temurin"
+          java-version: "11"
 
       - name: Install AVD & Android SDK
         run: |
@@ -43,7 +44,7 @@ jobs:
           nohup $HOME/android-sdk/emulator/emulator -avd test -no-window -noaudio -gpu swiftshader_indirect -no-boot-anim &
           adb wait-for-device
           adb shell input keyevent 82 &
-          sleep 60  # Wait for full boot
+          sleep 60
 
       - name: Install Instagram APK
         run: |
