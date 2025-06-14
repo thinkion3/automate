@@ -3,7 +3,7 @@ name: Android Appium Instagram Bot
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 2 * * *'  # Optional: runs daily at 2 AM UTC
+    - cron: '0 2 * * *'
 
 jobs:
   run-android-bot:
@@ -24,11 +24,10 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y qemu-kvm libvirt-daemon-system libvirt-clients bridge-utils python3-pip unzip curl wget openjdk-11-jdk
 
-          mkdir -p $HOME/android-sdk
-          cd $HOME/android-sdk
+          mkdir -p $HOME/android-sdk/cmdline-tools
+          cd $HOME/android-sdk/cmdline-tools
           wget https://dl.google.com/android/repository/commandlinetools-linux-8512546_latest.zip -O cmdtools.zip
-          unzip cmdtools.zip -d cmdline-tools
-          mv cmdline-tools cmdline-tools/latest
+          unzip cmdtools.zip -d latest
 
           echo "ANDROID_SDK_ROOT=$HOME/android-sdk" >> $GITHUB_ENV
           echo "$HOME/android-sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
@@ -37,7 +36,7 @@ jobs:
 
           yes | $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --sdk_root=$HOME/android-sdk "platform-tools" "platforms;android-30" "emulator" "system-images;android-30;google_apis;x86_64"
 
-          echo "no" | avdmanager create avd -n test -k "system-images;android-30;google_apis;x86_64" --force
+          echo "no" | $HOME/android-sdk/cmdline-tools/latest/bin/avdmanager create avd -n test -k "system-images;android-30;google_apis;x86_64" --force
 
       - name: Start Android Emulator
         run: |
