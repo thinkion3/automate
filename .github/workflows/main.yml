@@ -36,7 +36,7 @@ jobs:
           sudo dpkg --add-architecture i386
           sudo apt-get update -y
           
-          # Install 32-bit libraries with correct package names for Ubuntu 22.04
+          # Install common 32-bit libraries for Android emulator
           sudo apt-get install -y \
             libc6:i386 \
             libstdc++6:i386 \
@@ -51,10 +51,28 @@ jobs:
             libglu1-mesa:i386 \
             libpulse0:i386
           
-          # Try to install libncurses5:i386, fallback to libncurses6:i386 if not available
-          sudo apt-get install -y libncurses5:i386 || sudo apt-get install -y libncurses6:i386
-          
-          echo "✅ System dependencies installed"
+          echo "✅ Basic system dependencies installed"
+
+      - name: Install libncurses5:i386 workaround
+        run: |
+          echo "Attempting to install libncurses5:i386..."
+          # First, try to install directly (might work if repo changes or on different Ubuntu versions)
+          sudo apt-get install -y libncurses5:i386 || {
+            echo "Direct installation of libncurses5:i386 failed. Proceeding with manual download from Ubuntu 22.04 archives."
+            # Download libtinfo5:i386 (dependency for libncurses5) from Ubuntu 22.04 security updates
+            wget http://security.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2ubuntu0.1_i386.deb -O libtinfo5_i386.deb
+            # Download libncurses5:i386 from Ubuntu 22.04 security updates
+            wget http://security.ubuntu.com/ubuntu/pool/universe/n/ncurses/libncurses5_6.3-2ubuntu0.1_i386.deb -O libncurses5_i386.deb
+
+            # Install the downloaded packages
+            sudo dpkg -i libtinfo5_i386.deb libncurses5_i386.deb || {
+              echo "dpkg installation failed. Attempting to fix broken dependencies."
+              sudo apt-get install -f -y
+              # Try dpkg install again after fixing dependencies
+              sudo dpkg -i libtinfo5_i386.deb libncurses5_i386.deb
+            }
+          }
+          echo "✅ libncurses5:i386 (or equivalent) installed"
 
       - name: Setup Android SDK
         run: |
@@ -319,3 +337,5 @@ jobs:
           path: |
             emulator.log
             appium.log
+
+
