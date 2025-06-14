@@ -76,16 +76,16 @@ jobs:
       - name: Install libgl1-mesa-glx:i386 and libdrm:i386 workaround
         run: |
           echo "Attempting to install libgl1-mesa-glx:i386 and libdrm:i386 dependencies from Ubuntu 22.04 archives..."
-          # Download required i386 packages from Ubuntu 22.04 (Jammy Jellyfish) archives
-          # libglapi-mesa:i386 and libgl1-mesa-dri:i386 are core Mesa components
-          wget http://archive.ubuntu.com/ubuntu/pool/main/m/mesa/libglapi-mesa_23.2.1-1ubuntu3.1~22.04.3_i386.deb -O libglapi-mesa_i386.deb
-          wget http://archive.ubuntu.com/ubuntu/pool/main/m/mesa/libgl1-mesa-dri_23.2.1-1ubuntu3.1~22.04.3_i386.deb -O libgl1-mesa-dri_i386.deb
+          # Download required i386 packages from Ubuntu 22.04 (Jammy Jellyfish) security archives
+          # These are core Mesa components for OpenGL
+          wget http://security.ubuntu.com/ubuntu/pool/main/m/mesa/libglapi-mesa_22.2.5-0ubuntu0.1~22.04.1_i386.deb -O libglapi-mesa_i386.deb
+          wget http://security.ubuntu.com/ubuntu/pool/main/m/mesa/libgl1-mesa-dri_22.2.5-0ubuntu0.1~22.04.1_i386.deb -O libgl1-mesa-dri_i386.deb
 
-          # libdrm packages
-          wget http://archive.ubuntu.com/ubuntu/pool/main/libd/libdrm/libdrm2_2.4.113-2~ubuntu0.22.04.1_i386.deb -O libdrm2_i386.deb
-          wget http://archive.ubuntu.com/ubuntu/pool/main/libd/libdrm/libdrm-intel1_2.4.113-2~ubuntu0.22.04.1_i386.deb -O libdrm-intel1_i386.deb
-          wget http://archive.ubuntu.com/ubuntu/pool/main/libd/libdrm/libdrm-nouveau2_2.4.113-2~ubuntu0.22.04.1_i386.deb -O libdrm-nouveau2_i386.deb
-          wget http://archive.ubuntu.com/ubuntu/pool/main/libd/libdrm/libdrm-radeon1_2.4.113-2~ubuntu0.22.04.1_i386.deb -O libdrm-radeon1_i386.deb
+          # libdrm packages (Direct Rendering Manager)
+          wget http://security.ubuntu.com/ubuntu/pool/main/libd/libdrm/libdrm2_2.4.109-1ubuntu1~22.04.1_i386.deb -O libdrm2_i386.deb
+          wget http://security.ubuntu.com/ubuntu/pool/main/libd/libdrm/libdrm-intel1_2.4.109-1ubuntu1~22.04.1_i386.deb -O libdrm-intel1_i386.deb
+          wget http://security.ubuntu.com/ubuntu/pool/main/libd/libdrm/libdrm-nouveau2_2.4.109-1ubuntu1~22.04.1_i386.deb -O libdrm-nouveau2_i386.deb
+          wget http://security.ubuntu.com/ubuntu/pool/main/libd/libdrm/libdrm-radeon1_2.4.109-1ubuntu1~22.04.1_i386.deb -O libdrm-radeon1_i386.deb
 
           # Install the downloaded packages
           sudo dpkg -i \
@@ -303,71 +303,4 @@ jobs:
           
           # Wait for Appium server to start with better error handling
           echo "⏳ Starting Appium server..."
-          for i in {1..24}; do
-            if curl -s http://localhost:4723/status > /dev/null 2>&1; then
-              echo "✅ Appium server is ready"
-              break
-            fi
-            echo "Waiting for Appium server... ($i/24)"
-            sleep 5
-          done
-          
-          # Verify server is running
-          if ! curl -s http://localhost:4723/status > /dev/null 2>&1; then
-            echo "❌ Appium server failed to start"
-            echo "=== Appium Log ==="
-            cat appium.log || echo "No appium log found"
-            exit 1
-          fi
-          
-          echo "🚀 Appium server status:"
-          curl -s http://localhost:4723/status | head -20
-
-      - name: Debug Environment
-        run: |
-          echo "=== System Information ==="
-          uname -a
-          cat /proc/version
-          
-          echo "=== Java Version ==="
-          java -version
-          
-          echo "=== Node Version ==="
-          node --version
-          npm --version
-          
-          echo "=== Python Version ==="
-          python3 --version
-          pip3 --version
-          
-          echo "=== Android SDK ==="
-          ls -la $HOME/android-sdk/ || echo "Android SDK directory not found"
-          
-          echo "=== Available System Images ==="
-          $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --list | grep "system-images;android-30" || echo "No system images found"
-          
-          echo "=== AVD List ==="
-          $HOME/android-sdk/cmdline-tools/latest/bin/avdmanager list avd || echo "No AVDs found"
-          
-          echo "=== KVM Check ==="
-          ls -la /dev/kvm || echo "KVM not available"
-          
-          echo "=== Process List ==="
-          ps aux | grep -E "(emulator|appium)" || echo "No emulator/appium processes found"
-
-      - name: Run Instagram Bot
-        env:
-          IG_USERNAME: ${{ secrets.IG_USERNAME }}
-          IG_PASSWORD: ${{ secrets.IG_PASSWORD }}
-        run: |
-          echo "🤖 Starting Instagram bot..."
-          python3 appium_bot.py
-
-      - name: Upload logs on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: logs
-          path: |
-            emulator.log
-            appium.log
+          for i in {1..
