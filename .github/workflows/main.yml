@@ -77,15 +77,15 @@ jobs:
         run: |
           echo "Attempting to install libgl1-mesa-glx:i386 and libdrm:i386 dependencies from Ubuntu 22.04 archives..."
           # Download required i386 packages from Ubuntu 22.04 (Jammy Jellyfish) security archives
-          # These are core Mesa components for OpenGL
+          # These are core Mesa components for OpenGL. Using versions found to be stable for 22.04.
           wget http://security.ubuntu.com/ubuntu/pool/main/m/mesa/libglapi-mesa_22.2.5-0ubuntu0.1~22.04.1_i386.deb -O libglapi-mesa_i386.deb
           wget http://security.ubuntu.com/ubuntu/pool/main/m/mesa/libgl1-mesa-dri_22.2.5-0ubuntu0.1~22.04.1_i386.deb -O libgl1-mesa-dri_i386.deb
 
-          # libdrm packages (Direct Rendering Manager)
-          wget http://security.ubuntu.com/ubuntu/pool/main/libd/libdrm/libdrm2_2.4.109-1ubuntu1~22.04.1_i386.deb -O libdrm2_i386.deb
-          wget http://security.ubuntu.com/ubuntu/pool/main/libd/libdrm/libdrm-intel1_2.4.109-1ubuntu1~22.04.1_i386.deb -O libdrm-intel1_i386.deb
-          wget http://security.ubuntu.com/ubuntu/pool/main/libd/libdrm/libdrm-nouveau2_2.4.109-1ubuntu1~22.04.1_i386.deb -O libdrm-nouveau2_i386.deb
-          wget http://security.ubuntu.com/ubuntu/pool/main/libd/libdrm/libdrm-radeon1_2.4.109-1ubuntu1~22.04.1_i386.deb -O libdrm-radeon1_i386.deb
+          # libdrm packages (Direct Rendering Manager). Using versions found to be stable for 22.04.
+          wget http://security.ubuntu.com/ubuntu/pool/main/libd/libdrm/libdrm2_2.4.113-2~ubuntu0.22.04.1_i386.deb -O libdrm2_i386.deb
+          wget http://security.ubuntu.com/ubuntu/pool/main/libd/libdrm/libdrm-intel1_2.4.113-2~ubuntu0.22.04.1_i386.deb -O libdrm-intel1_i386.deb
+          wget http://security.ubuntu.com/ubuntu/pool/main/libd/libdrm/libdrm-nouveau2_2.4.113-2~ubuntu0.22.04.1_i386.deb -O libdrm-nouveau2_i386.deb
+          wget http://security.ubuntu.com/ubuntu/pool/main/libd/libdrm/libdrm-radeon1_2.4.113-2~ubuntu0.22.04.1_i386.deb -O libdrm-radeon1_i386.deb
 
           # Install the downloaded packages
           sudo dpkg -i \
@@ -193,114 +193,4 @@ jobs:
           echo "=== Available AVDs ==="
           $HOME/android-sdk/cmdline-tools/latest/bin/avdmanager list avd
           
-          # Start emulator with software rendering (more reliable on CI)
-          echo "🚀 Starting Android emulator..."
-          nohup $HOME/android-sdk/emulator/emulator @test_avd \
-            -no-window \
-            -no-audio \
-            -gpu swiftshader_indirect \
-            -no-boot-anim \
-            -memory 2048 \
-            -cores 2 \
-            -netdelay none \
-            -netspeed full \
-            -no-snapshot \
-            -wipe-data \
-            -verbose \
-            > emulator.log 2>&1 &
-          
-          echo "⏳ Waiting for emulator to start..."
-          # Wait for device with better error handling and longer timeout
-          for i in {1..120}; do
-            if $HOME/android-sdk/platform-tools/adb devices | grep -q "emulator.*device"; then
-              echo "📱 Emulator detected as device"
-              break
-            elif $HOME/android-sdk/platform-tools/adb devices | grep -q "emulator"; then
-              echo "📱 Emulator detected but not ready yet..."
-            fi
-            echo "Waiting... ($i/120)"
-            sleep 3
-          done
-          
-          # Verify device is connected
-          echo "=== ADB Devices ==="
-          $HOME/android-sdk/platform-tools/adb devices -l
-          
-          # Wait for boot complete with longer timeout
-          echo "⏳ Waiting for boot to complete..."
-          for i in {1..120}; do
-            boot_completed=$($HOME/android-sdk/platform-tools/adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r\n' || echo "0")
-            if [ "$boot_completed" = "1" ]; then
-              echo "✅ Boot completed successfully"
-              break
-            fi
-            echo "Boot status: '$boot_completed' ($i/120)"
-            sleep 3
-          done
-          
-          # Check if boot actually completed
-          final_boot_status=$($HOME/android-sdk/platform-tools/adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r\n' || echo "0")
-          if [ "$final_boot_status" != "1" ]; then
-            echo "❌ Boot did not complete properly"
-            echo "=== Emulator Log Tail ==="
-            tail -50 emulator.log || echo "No emulator log found"
-            exit 1
-          fi
-          
-          # Basic device setup
-          echo "🔧 Setting up device..."
-          $HOME/android-sdk/platform-tools/adb shell input keyevent 82 || echo "Could not unlock screen"
-          $HOME/android-sdk/platform-tools/adb shell wm density 160 || echo "Could not set density"
-          
-          # Disable animations for faster automation
-          $HOME/android-sdk/platform-tools/adb shell settings put global window_animation_scale 0 || true
-          $HOME/android-sdk/platform-tools/adb shell settings put global transition_animation_scale 0 || true
-          $HOME/android-sdk/platform-tools/adb shell settings put global animator_duration_scale 0 || true
-          
-          echo "✅ Emulator setup complete"
-          $HOME/android-sdk/platform-tools/adb shell getprop ro.build.version.release
-
-      - name: Install Instagram APK
-        run: |
-          # Download Instagram APK
-          wget -q "https://github.com/Alex313031/ig-apk/releases/download/latest/Instagram_v320.0.0.12.116.apk" -O instagram.apk
-          
-          # Install APK
-          $HOME/android-sdk/platform-tools/adb install -r instagram.apk
-          
-          # Verify installation
-          $HOME/android-sdk/platform-tools/adb shell pm list packages | grep instagram
-          echo "✅ Instagram APK installed"
-
-      - name: Install Appium and dependencies
-        run: |
-          # Install Python dependencies
-          pip3 install --upgrade pip
-          pip3 install Appium-Python-Client==3.1.0 selenium==4.15.2
-          
-          # Install Appium 2.x
-          npm install -g appium@2.2.1
-          
-          # Install UiAutomator2 driver
-          appium driver install uiautomator2
-          
-          # Verify installations
-          appium --version
-          appium driver list
-          
-          echo "✅ Appium and dependencies installed successfully"
-
-      - name: Start Appium Server
-        run: |
-          # Start Appium server in background with proper logging
-          nohup appium server \
-            --port 4723 \
-            --allow-insecure chromedriver_autodownload \
-            --relaxed-security \
-            --log-timestamp \
-            --log-no-colors \
-            > appium.log 2>&1 &
-          
-          # Wait for Appium server to start with better error handling
-          echo "⏳ Starting Appium server..."
-          for i in {1..
+          # Start emulator with software rendering (
