@@ -25,7 +25,10 @@ jobs:
 
       - name: Install system dependencies
         run: |
+          # Update package lists
           sudo apt-get update -y
+          
+          # Install basic dependencies
           sudo apt-get install -y qemu-kvm libvirt-daemon-system libvirt-clients bridge-utils
           sudo apt-get install -y python3-pip unzip curl wget openjdk-11-jdk
           
@@ -33,10 +36,25 @@ jobs:
           sudo dpkg --add-architecture i386
           sudo apt-get update -y
           
-          # Install 32-bit libraries required for Android emulator
-          sudo apt-get install -y libc6:i386 libncurses5:i386 libstdc++6:i386 lib32z1 libbz2-1.0:i386
-          sudo apt-get install -y libx11-6:i386 libxext6:i386 libxrender1:i386 libxtst6:i386 libxi6:i386
-          sudo apt-get install -y libgl1-mesa-glx:i386 libglu1-mesa:i386 libpulse0:i386
+          # Install 32-bit libraries with correct package names for Ubuntu 22.04
+          sudo apt-get install -y \
+            libc6:i386 \
+            libstdc++6:i386 \
+            lib32z1 \
+            libbz2-1.0:i386 \
+            libx11-6:i386 \
+            libxext6:i386 \
+            libxrender1:i386 \
+            libxtst6:i386 \
+            libxi6:i386 \
+            libgl1-mesa-glx:i386 \
+            libglu1-mesa:i386 \
+            libpulse0:i386
+          
+          # Try to install libncurses5:i386, fallback to libncurses6:i386 if not available
+          sudo apt-get install -y libncurses5:i386 || sudo apt-get install -y libncurses6:i386
+          
+          echo "✅ System dependencies installed"
 
       - name: Setup Android SDK
         run: |
@@ -58,86 +76,137 @@ jobs:
           export ANDROID_SDK_ROOT=$HOME/android-sdk
           export ANDROID_HOME=$HOME/android-sdk
           
+          # Accept licenses first
           yes | $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses
+          
+          # Update SDK manager
           $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --update
+          
+          # Install SDK components with fallback to different API levels
           $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager \
             "platform-tools" \
-            "platforms;android-30" \
             "emulator" \
-            "system-images;android-30;google_apis;x86_64" \
             "build-tools;30.0.3"
+          
+          # Try multiple API levels for better compatibility
+          $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager \
+            "platforms;android-30" \
+            "system-images;android-30;google_apis;x86_64" || \
+          $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager \
+            "platforms;android-29" \
+            "system-images;android-29;google_apis;x86_64" || \
+          $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager \
+            "platforms;android-28" \
+            "system-images;android-28;google_apis;x86_64"
+          
+          echo "✅ Android SDK components installed"
 
       - name: Create AVD
         run: |
           export ANDROID_SDK_ROOT=$HOME/android-sdk
           export ANDROID_HOME=$HOME/android-sdk
           
+          # Determine which system image is available
+          if $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --list | grep -q "system-images;android-30;google_apis;x86_64"; then
+            SYSTEM_IMAGE="system-images;android-30;google_apis;x86_64"
+            API_LEVEL="30"
+          elif $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --list | grep -q "system-images;android-29;google_apis;x86_64"; then
+            SYSTEM_IMAGE="system-images;android-29;google_apis;x86_64"
+            API_LEVEL="29"
+          else
+            SYSTEM_IMAGE="system-images;android-28;google_apis;x86_64"
+            API_LEVEL="28"
+          fi
+          
+          echo "Using system image: $SYSTEM_IMAGE"
+          
+          # Create AVD with detected system image
           echo "no" | $HOME/android-sdk/cmdline-tools/latest/bin/avdmanager create avd \
             -n test_avd \
-            -k "system-images;android-30;google_apis;x86_64" \
+            -k "$SYSTEM_IMAGE" \
             --force \
             -c 2048M
+          
+          # Save API level for later use
+          echo "ANDROID_API_LEVEL=$API_LEVEL" >> $GITHUB_ENV
+          
+          echo "✅ AVD created with API level $API_LEVEL"
 
       - name: Start Android Emulator
         run: |
           export ANDROID_SDK_ROOT=$HOME/android-sdk
           export ANDROID_HOME=$HOME/android-sdk
           
-          # Setup KVM permissions
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-          sudo usermod -a -G kvm $USER
+          # Check available AVDs
+          echo "=== Available AVDs ==="
+          $HOME/android-sdk/cmdline-tools/latest/bin/avdmanager list avd
           
-          # Check available system images
-          $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --list | grep system-images
-          
-          # Start emulator with more conservative settings
+          # Start emulator with software rendering (more reliable on CI)
+          echo "🚀 Starting Android emulator..."
           nohup $HOME/android-sdk/emulator/emulator @test_avd \
             -no-window \
             -no-audio \
-            -gpu auto \
+            -gpu swiftshader_indirect \
             -no-boot-anim \
             -memory 2048 \
             -cores 2 \
-            -accel on \
             -netdelay none \
             -netspeed full \
-            -qemu -m 2048 \
+            -no-snapshot \
+            -wipe-data \
+            -verbose \
             > emulator.log 2>&1 &
           
-          # Wait for device with better error handling
           echo "⏳ Waiting for emulator to start..."
-          for i in {1..60}; do
-            if $HOME/android-sdk/platform-tools/adb devices | grep -q emulator; then
-              echo "📱 Emulator detected"
+          # Wait for device with better error handling and longer timeout
+          for i in {1..120}; do
+            if $HOME/android-sdk/platform-tools/adb devices | grep -q "emulator.*device"; then
+              echo "📱 Emulator detected as device"
               break
+            elif $HOME/android-sdk/platform-tools/adb devices | grep -q "emulator"; then
+              echo "📱 Emulator detected but not ready yet..."
             fi
-            echo "Waiting... ($i/60)"
-            sleep 5
+            echo "Waiting... ($i/120)"
+            sleep 3
           done
           
-          # Wait for boot complete with timeout
+          # Verify device is connected
+          echo "=== ADB Devices ==="
+          $HOME/android-sdk/platform-tools/adb devices -l
+          
+          # Wait for boot complete with longer timeout
           echo "⏳ Waiting for boot to complete..."
-          for i in {1..60}; do
-            boot_completed=$($HOME/android-sdk/platform-tools/adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r\n')
+          for i in {1..120}; do
+            boot_completed=$($HOME/android-sdk/platform-tools/adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r\n' || echo "0")
             if [ "$boot_completed" = "1" ]; then
-              echo "✅ Boot completed"
+              echo "✅ Boot completed successfully"
               break
             fi
-            echo "Boot status: $boot_completed ($i/60)"
-            sleep 5
+            echo "Boot status: '$boot_completed' ($i/120)"
+            sleep 3
           done
           
-          # Additional setup
-          $HOME/android-sdk/platform-tools/adb shell input keyevent 82 || true
-          $HOME/android-sdk/platform-tools/adb shell wm density 160 || true
+          # Check if boot actually completed
+          final_boot_status=$($HOME/android-sdk/platform-tools/adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r\n' || echo "0")
+          if [ "$final_boot_status" != "1" ]; then
+            echo "❌ Boot did not complete properly"
+            echo "=== Emulator Log Tail ==="
+            tail -50 emulator.log || echo "No emulator log found"
+            exit 1
+          fi
+          
+          # Basic device setup
+          echo "🔧 Setting up device..."
+          $HOME/android-sdk/platform-tools/adb shell input keyevent 82 || echo "Could not unlock screen"
+          $HOME/android-sdk/platform-tools/adb shell wm density 160 || echo "Could not set density"
+          
+          # Disable animations for faster automation
           $HOME/android-sdk/platform-tools/adb shell settings put global window_animation_scale 0 || true
           $HOME/android-sdk/platform-tools/adb shell settings put global transition_animation_scale 0 || true
           $HOME/android-sdk/platform-tools/adb shell settings put global animator_duration_scale 0 || true
           
           echo "✅ Emulator setup complete"
-          $HOME/android-sdk/platform-tools/adb devices -l
+          $HOME/android-sdk/platform-tools/adb shell getprop ro.build.version.release
 
       - name: Install Instagram APK
         run: |
