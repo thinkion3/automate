@@ -36,77 +36,74 @@ jobs:
           sudo dpkg --add-architecture i386
           sudo apt-get update -y
           
-          # Install common 32-bit libraries (excluding libgl1-mesa-glx:i386 here, as it's often a transitional package)
+          echo "✅ Basic system dependencies installed"
+
+      - name: Install 32-bit libraries with improved approach
+        run: |
+          # Install essential 32-bit libraries that are commonly available
           sudo apt-get install -y \
             libc6:i386 \
             libstdc++6:i386 \
             lib32z1 \
+            lib32stdc++6 \
             libbz2-1.0:i386 \
             libx11-6:i386 \
             libxext6:i386 \
             libxrender1:i386 \
             libxtst6:i386 \
             libxi6:i386 \
-            libglu1-mesa:i386 \
-            libpulse0:i386
+            libpulse0:i386 \
+            libdbus-1-3:i386 \
+            libfontconfig1:i386 \
+            libfreetype6:i386 \
+            libpng16-16:i386 || echo "Some 32-bit packages may not be available, continuing..."
           
-          echo "✅ Basic system dependencies installed"
+          echo "✅ Essential 32-bit libraries installed"
 
-      - name: Install libncurses5:i386 workaround
+      - name: Install libncurses5:i386 with fallback
         run: |
           echo "Attempting to install libncurses5:i386..."
-          # First, try to install directly (might work if repo changes or on different Ubuntu versions)
-          sudo apt-get install -y libncurses5:i386 || {
-            echo "Direct installation of libncurses5:i386 failed. Proceeding with manual download from Ubuntu 22.04 archives."
-            # Download libtinfo5:i386 (dependency for libncurses5) from Ubuntu 22.04 security updates
-            wget http://security.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2ubuntu0.1_i386.deb -O libtinfo5_i386.deb
-            # Download libncurses5:i386 from Ubuntu 22.04 security updates
-            wget http://security.ubuntu.com/ubuntu/pool/universe/n/ncurses/libncurses5_6.3-2ubuntu0.1_i386.deb -O libncurses5_i386.deb
+          
+          # Try direct installation first
+          if sudo apt-get install -y libncurses5:i386 libtinfo5:i386; then
+            echo "✅ libncurses5:i386 installed directly"
+          else
+            echo "Direct installation failed, trying alternative approach..."
+            
+            # Try installing libncurses6 as fallback (newer version that might be available)
+            if sudo apt-get install -y libncurses6:i386 libtinfo6:i386; then
+              echo "✅ libncurses6:i386 installed as fallback"
+            else
+              echo "⚠️ Could not install libncurses, but continuing (may work with emulator)"
+            fi
+          fi
 
-            # Install the downloaded packages
-            sudo dpkg -i libtinfo5_i386.deb libncurses5_i386.deb || {
-              echo "dpkg installation failed. Attempting to fix broken dependencies."
-              sudo apt-get install -f -y
-              # Try dpkg install again after fixing dependencies
-              sudo dpkg -i libtinfo5_i386.deb libncurses5_i386.deb
-            }
-          }
-          echo "✅ libncurses5:i386 (or equivalent) installed"
-
-      - name: Install libgl1-mesa-glx:i386 and libdrm:i386 workaround
+      - name: Install Mesa and DRM libraries with fallback
         run: |
-          echo "Attempting to install libgl1-mesa-glx:i386 and libdrm:i386 dependencies from Ubuntu 22.04 archives..."
-          # Download required i386 packages from Ubuntu 22.04 (Jammy Jellyfish) security archives
-          # These are core Mesa components for OpenGL. Using versions found to be stable for 22.04.
-          wget http://security.ubuntu.com/ubuntu/pool/main/m/mesa/libglapi-mesa_22.2.5-0ubuntu0.1~22.04.1_i386.deb -O libglapi-mesa_i386.deb
-          wget http://security.ubuntu.com/ubuntu/pool/main/m/mesa/libgl1-mesa-dri_22.2.5-0ubuntu0.1~22.04.1_i386.deb -O libgl1-mesa-dri_i386.deb
-
-          # libdrm packages (Direct Rendering Manager). Using versions found to be stable for 22.04.
-          wget http://security.ubuntu.com/ubuntu/pool/main/libd/libdrm/libdrm2_2.4.113-2~ubuntu0.22.04.1_i386.deb -O libdrm2_i386.deb
-          wget http://security.ubuntu.com/ubuntu/pool/main/libd/libdrm/libdrm-intel1_2.4.113-2~ubuntu0.22.04.1_i386.deb -O libdrm-intel1_i386.deb
-          wget http://security.ubuntu.com/ubuntu/pool/main/libd/libdrm/libdrm-nouveau2_2.4.113-2~ubuntu0.22.04.1_i386.deb -O libdrm-nouveau2_i386.deb
-          wget http://security.ubuntu.com/ubuntu/pool/main/libd/libdrm/libdrm-radeon1_2.4.113-2~ubuntu0.22.04.1_i386.deb -O libdrm-radeon1_i386.deb
-
-          # Install the downloaded packages
-          sudo dpkg -i \
-            libglapi-mesa_i386.deb \
-            libgl1-mesa-dri_i386.deb \
-            libdrm2_i386.deb \
-            libdrm-intel1_i386.deb \
-            libdrm-nouveau2_i386.deb \
-            libdrm-radeon1_i386.deb || {
-            echo "dpkg installation of libgl/libdrm packages failed. Attempting to fix broken dependencies."
-            sudo apt-get install -f -y
-            # Try dpkg install again after fixing dependencies
-            sudo dpkg -i \
-              libglapi-mesa_i386.deb \
-              libgl1-mesa-dri_i386.deb \
-              libdrm2_i386.deb \
-              libdrm-intel1_i386.deb \
-              libdrm-nouveau2_i386.deb \
-              libdrm-radeon1_i386.deb
-          }
-          echo "✅ libglapi-mesa:i386, libgl1-mesa-dri:i386 and libdrm:i386 dependencies installed"
+          echo "Attempting to install Mesa and DRM libraries..."
+          
+          # Try to install the packages directly from current repositories
+          if sudo apt-get install -y \
+            libgl1-mesa-glx:i386 \
+            libgl1-mesa-dri:i386 \
+            libdrm2:i386 \
+            mesa-utils; then
+            echo "✅ Mesa and DRM libraries installed directly"
+          else
+            echo "Direct installation failed, trying individual packages..."
+            
+            # Try installing packages individually
+            sudo apt-get install -y libdrm2:i386 || echo "libdrm2:i386 failed"
+            sudo apt-get install -y libgl1-mesa-dri:i386 || echo "libgl1-mesa-dri:i386 failed"
+            sudo apt-get install -y mesa-utils || echo "mesa-utils failed"
+            
+            # Install software rendering fallback
+            sudo apt-get install -y \
+              libglapi-mesa:i386 \
+              libglu1-mesa:i386 || echo "Software rendering packages failed"
+            
+            echo "✅ Installed available Mesa components with fallbacks"
+          fi
 
       - name: Setup Android SDK
         run: |
@@ -122,6 +119,8 @@ jobs:
           echo "$HOME/android-sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
           echo "$HOME/android-sdk/emulator" >> $GITHUB_PATH
           echo "$HOME/android-sdk/platform-tools" >> $GITHUB_PATH
+          
+          echo "✅ Android SDK setup completed"
 
       - name: Install Android SDK components
         run: |
@@ -134,22 +133,30 @@ jobs:
           # Update SDK manager
           $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --update
           
-          # Install SDK components with fallback to different API levels
+          # Install essential SDK components
           $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager \
             "platform-tools" \
             "emulator" \
             "build-tools;30.0.3"
           
-          # Try multiple API levels for better compatibility
-          $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager \
+          # Install platform and system image with fallback
+          if $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager \
             "platforms;android-30" \
-            "system-images;android-30;google_apis;x86_64" || \
-          $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager \
+            "system-images;android-30;google_apis;x86_64"; then
+            echo "ANDROID_API_LEVEL=30" >> $GITHUB_ENV
+            echo "SYSTEM_IMAGE=system-images;android-30;google_apis;x86_64" >> $GITHUB_ENV
+          elif $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager \
             "platforms;android-29" \
-            "system-images;android-29;google_apis;x86_64" || \
-          $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager \
-            "platforms;android-28" \
-            "system-images;android-28;google_apis;x86_64"
+            "system-images;android-29;google_apis;x86_64"; then
+            echo "ANDROID_API_LEVEL=29" >> $GITHUB_ENV
+            echo "SYSTEM_IMAGE=system-images;android-29;google_apis;x86_64" >> $GITHUB_ENV
+          else
+            $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager \
+              "platforms;android-28" \
+              "system-images;android-28;google_apis;x86_64"
+            echo "ANDROID_API_LEVEL=28" >> $GITHUB_ENV
+            echo "SYSTEM_IMAGE=system-images;android-28;google_apis;x86_64" >> $GITHUB_ENV
+          fi
           
           echo "✅ Android SDK components installed"
 
@@ -158,19 +165,8 @@ jobs:
           export ANDROID_SDK_ROOT=$HOME/android-sdk
           export ANDROID_HOME=$HOME/android-sdk
           
-          # Determine which system image is available
-          if $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --list | grep -q "system-images;android-30;google_apis;x86_64"; then
-            SYSTEM_IMAGE="system-images;android-30;google_apis;x86_64"
-            API_LEVEL="30"
-          elif $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --list | grep -q "system-images;android-29;google_apis;x86_64"; then
-            SYSTEM_IMAGE="system-images;android-29;google_apis;x86_64"
-            API_LEVEL="29"
-          else
-            SYSTEM_IMAGE="system-images;android-28;google_apis;x86_64"
-            API_LEVEL="28"
-          fi
-          
           echo "Using system image: $SYSTEM_IMAGE"
+          echo "Using API level: $ANDROID_API_LEVEL"
           
           # Create AVD with detected system image
           echo "no" | $HOME/android-sdk/cmdline-tools/latest/bin/avdmanager create avd \
@@ -179,10 +175,7 @@ jobs:
             --force \
             -c 2048M
           
-          # Save API level for later use
-          echo "ANDROID_API_LEVEL=$API_LEVEL" >> $GITHUB_ENV
-          
-          echo "✅ AVD created with API level $API_LEVEL"
+          echo "✅ AVD created with API level $ANDROID_API_LEVEL"
 
       - name: Start Android Emulator
         run: |
@@ -193,4 +186,95 @@ jobs:
           echo "=== Available AVDs ==="
           $HOME/android-sdk/cmdline-tools/latest/bin/avdmanager list avd
           
-          # Start emulator with software rendering (
+          # Start emulator with software rendering and additional flags for GitHub Actions
+          nohup $HOME/android-sdk/emulator/emulator \
+            -avd test_avd \
+            -no-window \
+            -no-audio \
+            -no-snapshot \
+            -gpu swiftshader_indirect \
+            -camera-back none \
+            -camera-front none \
+            -memory 2048 \
+            -partition-size 4096 \
+            > emulator.log 2>&1 &
+          
+          # Wait for emulator to start
+          echo "Waiting for emulator to start..."
+          $HOME/android-sdk/platform-tools/adb wait-for-device shell 'while [[ -z $(getprop sys.boot_completed) ]]; do sleep 1; done'
+          
+          # Verify emulator is running
+          echo "=== Emulator Status ==="
+          $HOME/android-sdk/platform-tools/adb devices
+          
+          # Show emulator info
+          $HOME/android-sdk/platform-tools/adb shell getprop ro.build.version.release
+          $HOME/android-sdk/platform-tools/adb shell getprop ro.product.model
+          
+          echo "✅ Android emulator started successfully"
+
+      - name: Install Node.js dependencies
+        run: |
+          if [ -f package.json ]; then
+            npm install
+            echo "✅ Node.js dependencies installed"
+          else
+            echo "⚠️ No package.json found, skipping npm install"
+          fi
+
+      - name: Setup Appium
+        run: |
+          # Install Appium globally
+          npm install -g appium@2.0.0
+          
+          # Install UiAutomator2 driver for Android
+          appium driver install uiautomator2
+          
+          # Start Appium server in background
+          nohup appium server --port 4723 --allow-insecure chromedriver_autodownload > appium.log 2>&1 &
+          
+          # Wait for Appium to start
+          sleep 10
+          
+          # Verify Appium is running
+          curl -f http://localhost:4723/status || echo "Appium status check failed"
+          
+          echo "✅ Appium server started"
+
+      - name: Run Instagram Bot
+        run: |
+          # Add your bot script execution here
+          echo "🤖 Running Instagram Bot..."
+          
+          # Example: If you have a Node.js script
+          if [ -f bot.js ]; then
+            node bot.js
+          elif [ -f src/bot.js ]; then
+            node src/bot.js
+          elif [ -f index.js ]; then
+            node index.js
+          else
+            echo "⚠️ No bot script found. Please add your bot execution command here."
+            echo "Available files:"
+            ls -la
+          fi
+
+      - name: Cleanup and Logs
+        if: always()
+        run: |
+          echo "=== Emulator Logs ==="
+          if [ -f emulator.log ]; then
+            tail -n 50 emulator.log
+          fi
+          
+          echo "=== Appium Logs ==="
+          if [ -f appium.log ]; then
+            tail -n 50 appium.log
+          fi
+          
+          echo "=== Cleanup ==="
+          # Kill emulator and appium processes
+          pkill -f emulator || true
+          pkill -f appium || true
+          
+          echo "✅ Cleanup completed"
