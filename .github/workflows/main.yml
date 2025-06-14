@@ -28,7 +28,15 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y qemu-kvm libvirt-daemon-system libvirt-clients bridge-utils
           sudo apt-get install -y python3-pip unzip curl wget openjdk-11-jdk
+          
+          # Enable 32-bit architecture for Android emulator
+          sudo dpkg --add-architecture i386
+          sudo apt-get update -y
+          
+          # Install 32-bit libraries required for Android emulator
           sudo apt-get install -y libc6:i386 libncurses5:i386 libstdc++6:i386 lib32z1 libbz2-1.0:i386
+          sudo apt-get install -y libx11-6:i386 libxext6:i386 libxrender1:i386 libxtst6:i386 libxi6:i386
+          sudo apt-get install -y libgl1-mesa-glx:i386 libglu1-mesa:i386 libpulse0:i386
 
       - name: Setup Android SDK
         run: |
@@ -75,34 +83,61 @@ jobs:
           export ANDROID_SDK_ROOT=$HOME/android-sdk
           export ANDROID_HOME=$HOME/android-sdk
           
-          # Enable KVM acceleration
-          sudo adduser $USER kvm
-          sudo chmod 666 /dev/kvm
+          # Setup KVM permissions
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          sudo usermod -a -G kvm $USER
           
-          # Start emulator in background
+          # Check available system images
+          $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --list | grep system-images
+          
+          # Start emulator with more conservative settings
           nohup $HOME/android-sdk/emulator/emulator @test_avd \
             -no-window \
             -no-audio \
-            -gpu swiftshader_indirect \
+            -gpu auto \
             -no-boot-anim \
             -memory 2048 \
-            -partition-size 4096 \
-            -wipe-data \
+            -cores 2 \
+            -accel on \
+            -netdelay none \
+            -netspeed full \
+            -qemu -m 2048 \
             > emulator.log 2>&1 &
           
-          # Wait for device to be ready
-          timeout 300 $HOME/android-sdk/platform-tools/adb wait-for-device
+          # Wait for device with better error handling
+          echo "⏳ Waiting for emulator to start..."
+          for i in {1..60}; do
+            if $HOME/android-sdk/platform-tools/adb devices | grep -q emulator; then
+              echo "📱 Emulator detected"
+              break
+            fi
+            echo "Waiting... ($i/60)"
+            sleep 5
+          done
           
-          # Wait for boot to complete
-          timeout 300 bash -c 'until [ "$($HOME/android-sdk/platform-tools/adb shell getprop sys.boot_completed | tr -d "\r")" = "1" ]; do sleep 5; done'
+          # Wait for boot complete with timeout
+          echo "⏳ Waiting for boot to complete..."
+          for i in {1..60}; do
+            boot_completed=$($HOME/android-sdk/platform-tools/adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r\n')
+            if [ "$boot_completed" = "1" ]; then
+              echo "✅ Boot completed"
+              break
+            fi
+            echo "Boot status: $boot_completed ($i/60)"
+            sleep 5
+          done
           
-          # Unlock the screen
-          $HOME/android-sdk/platform-tools/adb shell input keyevent 82
-          $HOME/android-sdk/platform-tools/adb shell input keyevent 26
-          sleep 10
+          # Additional setup
+          $HOME/android-sdk/platform-tools/adb shell input keyevent 82 || true
+          $HOME/android-sdk/platform-tools/adb shell wm density 160 || true
+          $HOME/android-sdk/platform-tools/adb shell settings put global window_animation_scale 0 || true
+          $HOME/android-sdk/platform-tools/adb shell settings put global transition_animation_scale 0 || true
+          $HOME/android-sdk/platform-tools/adb shell settings put global animator_duration_scale 0 || true
           
-          echo "✅ Emulator is ready"
-          $HOME/android-sdk/platform-tools/adb devices
+          echo "✅ Emulator setup complete"
+          $HOME/android-sdk/platform-tools/adb devices -l
 
       - name: Install Instagram APK
         run: |
@@ -120,30 +155,84 @@ jobs:
         run: |
           # Install Python dependencies
           pip3 install --upgrade pip
-          pip3 install Appium-Python-Client selenium
+          pip3 install Appium-Python-Client==3.1.0 selenium==4.15.2
           
-          # Install Appium
-          npm install -g appium@2.0.0
-          npm install -g @appium/doctor
-          
-          # Verify Appium installation
-          appium --version
+          # Install Appium 2.x
+          npm install -g appium@2.2.1
           
           # Install UiAutomator2 driver
           appium driver install uiautomator2
           
-          echo "✅ Appium installed successfully"
+          # Verify installations
+          appium --version
+          appium driver list
+          
+          echo "✅ Appium and dependencies installed successfully"
 
       - name: Start Appium Server
         run: |
-          # Start Appium server in background
-          nohup appium server --port 4723 --allow-insecure chromedriver_autodownload > appium.log 2>&1 &
+          # Start Appium server in background with proper logging
+          nohup appium server \
+            --port 4723 \
+            --allow-insecure chromedriver_autodownload \
+            --relaxed-security \
+            --log-timestamp \
+            --log-no-colors \
+            > appium.log 2>&1 &
           
-          # Wait for Appium server to start
-          timeout 60 bash -c 'until curl -s http://localhost:4723/status > /dev/null; do echo "Waiting for Appium server..."; sleep 5; done'
+          # Wait for Appium server to start with better error handling
+          echo "⏳ Starting Appium server..."
+          for i in {1..24}; do
+            if curl -s http://localhost:4723/status > /dev/null 2>&1; then
+              echo "✅ Appium server is ready"
+              break
+            fi
+            echo "Waiting for Appium server... ($i/24)"
+            sleep 5
+          done
           
-          echo "✅ Appium server is running"
+          # Verify server is running
+          if ! curl -s http://localhost:4723/status > /dev/null 2>&1; then
+            echo "❌ Appium server failed to start"
+            echo "=== Appium Log ==="
+            cat appium.log || echo "No appium log found"
+            exit 1
+          fi
+          
+          echo "🚀 Appium server status:"
           curl -s http://localhost:4723/status | head -20
+
+      - name: Debug Environment
+        run: |
+          echo "=== System Information ==="
+          uname -a
+          cat /proc/version
+          
+          echo "=== Java Version ==="
+          java -version
+          
+          echo "=== Node Version ==="
+          node --version
+          npm --version
+          
+          echo "=== Python Version ==="
+          python3 --version
+          pip3 --version
+          
+          echo "=== Android SDK ==="
+          ls -la $HOME/android-sdk/ || echo "Android SDK directory not found"
+          
+          echo "=== Available System Images ==="
+          $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --list | grep "system-images;android-30" || echo "No system images found"
+          
+          echo "=== AVD List ==="
+          $HOME/android-sdk/cmdline-tools/latest/bin/avdmanager list avd || echo "No AVDs found"
+          
+          echo "=== KVM Check ==="
+          ls -la /dev/kvm || echo "KVM not available"
+          
+          echo "=== Process List ==="
+          ps aux | grep -E "(emulator|appium)" || echo "No emulator/appium processes found"
 
       - name: Run Instagram Bot
         env:
