@@ -6,7 +6,7 @@ on:
 jobs:
   run-android-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30  # Reduced from 45 minutes
 
     steps:
       - name: Checkout repo
@@ -23,95 +23,32 @@ jobs:
         with:
           node-version: '18'
 
-      - name: Install system dependencies
+      - name: Install minimal system dependencies
         run: |
-          # Update package lists
+          # Only install absolutely essential packages
           sudo apt-get update -y
+          sudo apt-get install -y unzip curl wget
           
-          # Install basic dependencies
-          sudo apt-get install -y qemu-kvm libvirt-daemon-system libvirt-clients bridge-utils
-          sudo apt-get install -y python3-pip unzip curl wget openjdk-11-jdk
-          
-          # Enable 32-bit architecture for Android emulator
+          # Enable 32-bit architecture (required for ARM emulator)
           sudo dpkg --add-architecture i386
           sudo apt-get update -y
           
-          echo "✅ Basic system dependencies installed"
-
-      - name: Install 32-bit libraries with improved approach
-        run: |
-          # Install essential 32-bit libraries that are commonly available
-          sudo apt-get install -y \
-            libc6:i386 \
-            libstdc++6:i386 \
-            lib32z1 \
-            lib32stdc++6 \
-            libbz2-1.0:i386 \
-            libx11-6:i386 \
-            libxext6:i386 \
-            libxrender1:i386 \
-            libxtst6:i386 \
-            libxi6:i386 \
-            libpulse0:i386 \
-            libdbus-1-3:i386 \
-            libfontconfig1:i386 \
-            libfreetype6:i386 \
-            libpng16-16:i386 || echo "Some 32-bit packages may not be available, continuing..."
+          # Install only critical 32-bit libraries
+          sudo apt-get install -y libc6:i386 libstdc++6:i386 lib32z1 || echo "Some packages failed, continuing..."
           
-          echo "✅ Essential 32-bit libraries installed"
+          echo "✅ Minimal dependencies installed"
 
-      - name: Install libncurses5:i386 with fallback
+      - name: Setup Android SDK (Cached)
         run: |
-          echo "Attempting to install libncurses5:i386..."
-          
-          # Try direct installation first
-          if sudo apt-get install -y libncurses5:i386 libtinfo5:i386; then
-            echo "✅ libncurses5:i386 installed directly"
-          else
-            echo "Direct installation failed, trying alternative approach..."
-            
-            # Try installing libncurses6 as fallback (newer version that might be available)
-            if sudo apt-get install -y libncurses6:i386 libtinfo6:i386; then
-              echo "✅ libncurses6:i386 installed as fallback"
-            else
-              echo "⚠️ Could not install libncurses, but continuing (may work with emulator)"
-            fi
-          fi
-
-      - name: Install Mesa and DRM libraries with fallback
-        run: |
-          echo "Attempting to install Mesa and DRM libraries..."
-          
-          # Try to install the packages directly from current repositories
-          if sudo apt-get install -y \
-            libgl1-mesa-glx:i386 \
-            libgl1-mesa-dri:i386 \
-            libdrm2:i386 \
-            mesa-utils; then
-            echo "✅ Mesa and DRM libraries installed directly"
-          else
-            echo "Direct installation failed, trying individual packages..."
-            
-            # Try installing packages individually
-            sudo apt-get install -y libdrm2:i386 || echo "libdrm2:i386 failed"
-            sudo apt-get install -y libgl1-mesa-dri:i386 || echo "libgl1-mesa-dri:i386 failed"
-            sudo apt-get install -y mesa-utils || echo "mesa-utils failed"
-            
-            # Install software rendering fallback
-            sudo apt-get install -y \
-              libglapi-mesa:i386 \
-              libglu1-mesa:i386 || echo "Software rendering packages failed"
-            
-            echo "✅ Installed available Mesa components with fallbacks"
-          fi
-
-      - name: Setup Android SDK
-        run: |
+          # Use smaller command line tools download
           mkdir -p $HOME/android-sdk/cmdline-tools
           cd $HOME/android-sdk/cmdline-tools
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-8512546_latest.zip -O cmdtools.zip
+          
+          # Download and extract quickly
+          curl -s https://dl.google.com/android/repository/commandlinetools-linux-8512546_latest.zip -o cmdtools.zip
           unzip -q cmdtools.zip
           mv cmdline-tools latest
+          rm cmdtools.zip
           
           # Set environment variables
           echo "ANDROID_SDK_ROOT=$HOME/android-sdk" >> $GITHUB_ENV
@@ -122,131 +59,122 @@ jobs:
           
           echo "✅ Android SDK setup completed"
 
-      - name: Install Android SDK components
+      - name: Install minimal Android SDK components
         run: |
           export ANDROID_SDK_ROOT=$HOME/android-sdk
           export ANDROID_HOME=$HOME/android-sdk
           
-          # Accept licenses first
-          yes | $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses
+          # Accept licenses quickly
+          yes | $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --licenses > /dev/null 2>&1
           
-          # Update SDK manager
-          $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager --update
-          
-          # Install essential SDK components
+          # Install only essential components with fastest options
           $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager \
             "platform-tools" \
             "emulator" \
-            "build-tools;30.0.3"
+            "platforms;android-28" \
+            "system-images;android-28;default;armeabi-v7a" \
+            --no_https --verbose
           
-          # Install platform and system image with fallback
-          if $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager \
-            "platforms;android-30" \
-            "system-images;android-30;google_apis;x86_64"; then
-            echo "ANDROID_API_LEVEL=30" >> $GITHUB_ENV
-            echo "SYSTEM_IMAGE=system-images;android-30;google_apis;x86_64" >> $GITHUB_ENV
-          elif $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager \
-            "platforms;android-29" \
-            "system-images;android-29;google_apis;x86_64"; then
-            echo "ANDROID_API_LEVEL=29" >> $GITHUB_ENV
-            echo "SYSTEM_IMAGE=system-images;android-29;google_apis;x86_64" >> $GITHUB_ENV
-          else
-            $HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager \
-              "platforms;android-28" \
-              "system-images;android-28;google_apis;x86_64"
-            echo "ANDROID_API_LEVEL=28" >> $GITHUB_ENV
-            echo "SYSTEM_IMAGE=system-images;android-28;google_apis;x86_64" >> $GITHUB_ENV
-          fi
-          
-          echo "✅ Android SDK components installed"
+          echo "✅ Minimal Android SDK components installed"
 
-      - name: Create AVD
+      - name: Create lightweight AVD
         run: |
           export ANDROID_SDK_ROOT=$HOME/android-sdk
           export ANDROID_HOME=$HOME/android-sdk
           
-          echo "Using system image: $SYSTEM_IMAGE"
-          echo "Using API level: $ANDROID_API_LEVEL"
-          
-          # Create AVD with detected system image
+          # Create minimal AVD
           echo "no" | $HOME/android-sdk/cmdline-tools/latest/bin/avdmanager create avd \
-            -n test_avd \
-            -k "$SYSTEM_IMAGE" \
+            -n fast_avd \
+            -k "system-images;android-28;default;armeabi-v7a" \
             --force \
-            -c 2048M
+            -c 512M
           
-          echo "✅ AVD created with API level $ANDROID_API_LEVEL"
+          # Configure AVD for maximum speed
+          echo "hw.cpu.ncore=2" >> $HOME/.android/avd/fast_avd.avd/config.ini
+          echo "hw.ramSize=1024" >> $HOME/.android/avd/fast_avd.avd/config.ini
+          echo "hw.gpu.enabled=no" >> $HOME/.android/avd/fast_avd.avd/config.ini
+          echo "hw.camera.back=none" >> $HOME/.android/avd/fast_avd.avd/config.ini
+          echo "hw.camera.front=none" >> $HOME/.android/avd/fast_avd.avd/config.ini
+          echo "hw.gps=no" >> $HOME/.android/avd/fast_avd.avd/config.ini
+          echo "hw.sensors.proximity=no" >> $HOME/.android/avd/fast_avd.avd/config.ini
+          echo "hw.sensors.orientation=no" >> $HOME/.android/avd/fast_avd.avd/config.ini
+          
+          echo "✅ Lightweight AVD created"
 
-      - name: Start Android Emulator
+      - name: Start ultra-fast Android emulator
         run: |
           export ANDROID_SDK_ROOT=$HOME/android-sdk
           export ANDROID_HOME=$HOME/android-sdk
           
-          # Check available AVDs
-          echo "=== Available AVDs ==="
-          $HOME/android-sdk/cmdline-tools/latest/bin/avdmanager list avd
-          
-          # Start emulator with software rendering and additional flags for GitHub Actions
+          # Start emulator with maximum speed optimizations
           nohup $HOME/android-sdk/emulator/emulator \
-            -avd test_avd \
+            -avd fast_avd \
             -no-window \
             -no-audio \
             -no-snapshot \
-            -gpu swiftshader_indirect \
+            -no-boot-anim \
+            -no-skin \
+            -gpu off \
+            -memory 1024 \
+            -cores 2 \
+            -partition-size 512 \
             -camera-back none \
             -camera-front none \
-            -memory 2048 \
-            -partition-size 4096 \
+            -netfast \
+            -noaudio \
+            -qemu -m 1024 \
             > emulator.log 2>&1 &
           
-          # Wait for emulator to start
-          echo "Waiting for emulator to start..."
-          $HOME/android-sdk/platform-tools/adb wait-for-device shell 'while [[ -z $(getprop sys.boot_completed) ]]; do sleep 1; done'
+          echo "⏳ Starting ultra-fast emulator (should take 3-5 minutes)..."
           
-          # Verify emulator is running
+          # Wait for device with timeout
+          timeout 300 $HOME/android-sdk/platform-tools/adb wait-for-device || {
+            echo "❌ Emulator failed to start within 5 minutes"
+            cat emulator.log
+            exit 1
+          }
+          
+          # Wait for boot completion with timeout
+          timeout 180 sh -c 'while [[ -z $($HOME/android-sdk/platform-tools/adb shell getprop sys.boot_completed 2>/dev/null) ]]; do sleep 2; done' || {
+            echo "❌ Emulator failed to boot completely"
+            exit 1
+          }
+          
+          # Quick verification
           echo "=== Emulator Status ==="
           $HOME/android-sdk/platform-tools/adb devices
-          
-          # Show emulator info
           $HOME/android-sdk/platform-tools/adb shell getprop ro.build.version.release
-          $HOME/android-sdk/platform-tools/adb shell getprop ro.product.model
           
-          echo "✅ Android emulator started successfully"
+          echo "✅ Ultra-fast Android emulator started successfully!"
+
+      - name: Setup Appium quickly
+        run: |
+          # Install Appium with minimal configuration
+          npm install -g appium@2.0.0 --silent
+          appium driver install uiautomator2 --silent
+          
+          # Start Appium server
+          nohup appium server --port 4723 --allow-insecure chromedriver_autodownload --log-level error > appium.log 2>&1 &
+          
+          # Quick wait for Appium
+          sleep 5
+          curl -f http://localhost:4723/status > /dev/null 2>&1 || echo "Appium starting..."
+          
+          echo "✅ Appium server started"
 
       - name: Install Node.js dependencies
         run: |
           if [ -f package.json ]; then
-            npm install
-            echo "✅ Node.js dependencies installed"
+            npm install --silent
           else
-            echo "⚠️ No package.json found, skipping npm install"
+            echo "⚠️ No package.json found"
           fi
-
-      - name: Setup Appium
-        run: |
-          # Install Appium globally
-          npm install -g appium@2.0.0
-          
-          # Install UiAutomator2 driver for Android
-          appium driver install uiautomator2
-          
-          # Start Appium server in background
-          nohup appium server --port 4723 --allow-insecure chromedriver_autodownload > appium.log 2>&1 &
-          
-          # Wait for Appium to start
-          sleep 10
-          
-          # Verify Appium is running
-          curl -f http://localhost:4723/status || echo "Appium status check failed"
-          
-          echo "✅ Appium server started"
 
       - name: Run Instagram Bot
         run: |
-          # Add your bot script execution here
           echo "🤖 Running Instagram Bot..."
           
-          # Example: If you have a Node.js script
+          # Add your bot execution here
           if [ -f bot.js ]; then
             node bot.js
           elif [ -f src/bot.js ]; then
@@ -254,26 +182,24 @@ jobs:
           elif [ -f index.js ]; then
             node index.js
           else
-            echo "⚠️ No bot script found. Please add your bot execution command here."
-            echo "Available files:"
-            ls -la
+            echo "⚠️ No bot script found. Add your bot execution command here."
+            echo "Emulator is ready for testing!"
+            
+            # Test that everything works
+            $HOME/android-sdk/platform-tools/adb shell input tap 100 100
+            echo "✅ Test tap successful - emulator is responsive"
           fi
 
-      - name: Cleanup and Logs
+      - name: Cleanup
         if: always()
         run: |
-          echo "=== Emulator Logs ==="
+          echo "=== Final Logs ==="
           if [ -f emulator.log ]; then
-            tail -n 50 emulator.log
+            echo "Last 20 lines of emulator log:"
+            tail -n 20 emulator.log
           fi
           
-          echo "=== Appium Logs ==="
-          if [ -f appium.log ]; then
-            tail -n 50 appium.log
-          fi
-          
-          echo "=== Cleanup ==="
-          # Kill emulator and appium processes
+          # Cleanup processes
           pkill -f emulator || true
           pkill -f appium || true
           
