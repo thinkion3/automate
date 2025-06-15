@@ -72,8 +72,8 @@ jobs:
             "platform-tools" \
             "emulator" \
             "platforms;android-28" \
-            "system-images;android-28;default;armeabi-v7a" \
-            --no_https --verbose
+            "system-images;android-28;google_apis;x86_64" \
+            --verbose
           
           echo "✅ Minimal Android SDK components installed"
 
@@ -85,14 +85,15 @@ jobs:
           # Create minimal AVD
           echo "no" | $HOME/android-sdk/cmdline-tools/latest/bin/avdmanager create avd \
             -n fast_avd \
-            -k "system-images;android-28;default;armeabi-v7a" \
+            -k "system-images;android-28;google_apis;x86_64" \
             --force \
-            -c 512M
+            -c 1024M
           
           # Configure AVD for maximum speed
           echo "hw.cpu.ncore=2" >> $HOME/.android/avd/fast_avd.avd/config.ini
-          echo "hw.ramSize=1024" >> $HOME/.android/avd/fast_avd.avd/config.ini
-          echo "hw.gpu.enabled=no" >> $HOME/.android/avd/fast_avd.avd/config.ini
+          echo "hw.ramSize=2048" >> $HOME/.android/avd/fast_avd.avd/config.ini
+          echo "hw.gpu.enabled=yes" >> $HOME/.android/avd/fast_avd.avd/config.ini
+          echo "hw.gpu.mode=swiftshader_indirect" >> $HOME/.android/avd/fast_avd.avd/config.ini
           echo "hw.camera.back=none" >> $HOME/.android/avd/fast_avd.avd/config.ini
           echo "hw.camera.front=none" >> $HOME/.android/avd/fast_avd.avd/config.ini
           echo "hw.gps=no" >> $HOME/.android/avd/fast_avd.avd/config.ini
@@ -113,16 +114,12 @@ jobs:
             -no-audio \
             -no-snapshot \
             -no-boot-anim \
-            -no-skin \
-            -gpu off \
-            -memory 1024 \
+            -gpu swiftshader_indirect \
+            -memory 2048 \
             -cores 2 \
-            -partition-size 512 \
+            -partition-size 1024 \
             -camera-back none \
             -camera-front none \
-            -netfast \
-            -noaudio \
-            -qemu -m 1024 \
             > emulator.log 2>&1 &
           
           echo "⏳ Starting ultra-fast emulator (should take 3-5 minutes)..."
@@ -203,4 +200,4 @@ jobs:
           pkill -f emulator || true
           pkill -f appium || true
           
-          echo "✅ Cleanup completed"
+          echo "✅ Cleanup completed"        echo "✅ Cleanup completed"
